@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Voz Carretilla - v10 Final</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        .header { padding: 15px; background: #1e1e1e; border-bottom: 2px solid #2ecc71; display: flex; justify-content: space-around; align-items: center; }
+        .lista-pedidos { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; align-content: flex-start; }
+        .pedido-card { 
+            background: #2d2d2d; border: 3px solid #444; padding: 15px; border-radius: 15px; width: 280px;
+            position: relative; transition: all 0.3s;
+        }
+        .id-badge { background: #2ecc71; color: black; padding: 5px 12px; border-radius: 8px; font-weight: bold; font-size: 1.4em; position: absolute; top: -10px; left: -10px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        .linea-txt { color: #3498db; font-size: 1.1em; display: block; margin-top: 10px; font-weight: bold; }
+        .producto-txt { font-size: 1.4em; font-weight: bold; display: block; margin: 10px 0; color: #fff; }
+        #status-bar { background: #2ecc71; color: black; padding: 10px; font-weight: bold; font-size: 1.1em; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 100; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        input { padding: 15px; font-size: 1.2em; border-radius: 8px; border: none; width: 300px; text-align: center; background: #333; color: white; }
+        .btn-inicio { padding: 20px 50px; background: #2ecc71; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-top: 20px; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h1 style="color: #2ecc71;">Panel Carretilla Voz</h1>
+        <input type="text" id="nombreCarretillero" placeholder="Tu Nombre...">
+        <button class="btn-inicio" onclick="activarSistema()">INICIAR TURNO</button>
+    </div>
+
+    <div class="header">
+        <div id="user-display">👤: <b id="nombre-txt">---</b></div>
+        <button onclick="dictarListaCompleta()" style="background:#444; color:white; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">REPETIR LISTA</button>
+    </div>
+    
+    <div id="status-bar">Esperando conexión...</div>
+
+    <div class="lista-pedidos" id="contenedor-pedidos"></div>
+
+    <script>
+        // --- CONFIGURACIÓN ---
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzuTfaz-RPol3mW3NBq7VdP5-oo_VCwfvhHjVvHudhXTHY9C_Dh-1OCACS-OPoi-UlZKA/exec"; // REEMPLAZAR CON TU URL /exec
+
+        let pedidosActivos = [];
+        let sistemaActivo = false;
+        const synth = window.speechSynthesis;
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        
+        recognition.lang = 'es-ES';
+        recognition.continuous = true;
+        recognition.interimResults = false;
+
+        // --- PROCESAMIENTO DE TEXTO ---
+        function prepararProductoParaVoz(texto) {
+            // Reemplaza guiones por pausas (comas) para que lea bloques enteros
+            return texto.toString().replace(/-/g, ', '); 
+        }
+
+        function prepararIDParaVoz(id) {
+            // Deletrea números con puntos para máxima claridad
+            return id.toString().split('').join('. ');
+        }
+
+        // --- MOTOR DE VOZ (COLA DE ESPERA) ---
+        function decir(texto, callback) {
+            // Si no hay callback, cancelamos lo anterior para dar prioridad a la orden actual
+            if (synth.speaking && !callback) synth.cancel();
+
+            const ut = new SpeechSynthesisUtterance(texto);
+            ut.lang = 'es-ES';
+            ut.rate = 0.70; // Velocidad lenta y robótica
+            ut.pitch = 1.0;  
+
+            if (callback) {
+                ut.onend = callback; // Ejecuta la siguiente función al terminar de hablar
+            }
+
+            synth.speak(ut);
+        }
+
+        // --- DICTADO SECUENCIAL ---
+        function dictarListaCompleta() {
+            if (pedidosActivos.length === 0) {
+                decir("No hay pedidos pendientes.");
+                return;
+            }
+            
+            synth.cancel();
+            decir("Lista de pedidos actuales.");
+
+            let i = 0;
+            function siguiente() {
+                if (i < pedidosActivos.length && sistemaActivo) {
+                    const p = pedidosActivos[i];
+                    const idCorto = p.id.toString().slice(-3);
+                    const idParaVoz = prepararIDParaVoz(idCorto);
+                    const productoParaVoz = prepararProductoParaVoz(p.producto);
+
+                    const mensaje = `Pedido número ${i + 1}. . . Identificador: ${idParaVoz}. . . Producto: ${productoParaVoz}. . . En la línea: ${p.linea}`;
+                    
+                    i++;
+                    setTimeout(() => {
+                        decir(mensaje, siguiente);
+                    }, 800); 
+                }
+            }
+            setTimeout(siguiente, 1500);
+        }
+
+        // --- ARRANQUE DEL SISTEMA ---
+        function activarSistema() {
+            const nombre = document.getElementById('nombreCarretillero').value.trim();
+            if (!nombre) return alert("Escribe tu nombre.");
+            
+            document.getElementById('nombre-txt').innerText = nombre;
+            document.getElementById('overlay').style.display = 'none';
+            sistemaActivo = true;
+            
+            try {
+                recognition.start();
+                document.getElementById('status-bar').innerText = "🎤 ESCUCHANDO COMANDOS...";
+                
+                decir(`Hola ${nombre}. Que tengas una buena jornada de trabajo.`, () => {
+                    buscarPedidos(true); // Empieza a buscar y dicta la primera lista tras el saludo
+                });
+
+                setInterval(buscarPedidos, 10000); 
+            } catch(e) { console.error(e); }
+        }
+
+        // --- ESCUCHA DE COMANDOS ---
+        recognition.onresult = (event) => {
+            const voz = event.results[event.results.length - 1][0].transcript.toLowerCase();
+            document.getElementById('status-bar').innerText = "Voz: " + voz;
+            
+            if (voz.includes("repetir lista") || voz.includes("repite los pedidos") || voz.includes("repite la lista")) {
+                dictarListaCompleta();
+                return;
+            }
+
+            const match = voz.match(/\d+/);
+            if (!match) return;
+            const numDicho = match[0];
+            const pedido = pedidosActivos.find(p => p.id.toString().endsWith(numDicho));
+
+            if (pedido) {
+                const carretillero = document.getElementById('nombreCarretillero').value;
+                let accion = "";
+                if (voz.includes("aceptar")) accion = "Aceptado";
+                else if (voz.includes("recogido")) accion = "Recogido";
+                else if (voz.includes("entregado") || voz.includes("hecho")) accion = "Entregado";
+                else if (voz.includes("stock") || voz.includes("no hay")) accion = "SinStock";
+
+                if (accion) {
+                    decir(`${accion} pedido ${prepararIDParaVoz(numDicho)}`);
+                    ejecutarAccion(pedido.id, accion, carretillero);
+                }
+            }
+        };
+
+        async function ejecutarAccion(id, estado, usuario) {
+            try {
+                await fetch(WEB_APP_URL, {
+                    method: "POST",
+                    mode: "no-cors",
+                    body: JSON.stringify({ action: "actualizar", id: id, estado: estado, carretillero: usuario })
+                });
+                setTimeout(() => buscarPedidos(false), 2000);
+            } catch (e) { console.error(e); }
+        }
+
+        async function buscarPedidos(debeDictar = false) {
+            if (!sistemaActivo) return;
+            try {
+                const response = await fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "obtener" }) });
+                const nuevosPedidos = await response.json();
+                
+                // Aviso de pedido nuevo individual si no se está dictando la lista
+                if (nuevosPedidos.length > pedidosActivos.length && !debeDictar && !synth.speaking) {
+                    const n = nuevosPedidos[nuevosPedidos.length - 1];
+                    decir(`Atención. Nuevo pedido: ${prepararProductoParaVoz(n.producto)}. Identificador: ${prepararIDParaVoz(n.id.toString().slice(-3))}`);
+                }
+
+                pedidosActivos = nuevosPedidos;
+                renderizar();
+                if (debeDictar) dictarListaCompleta();
+            } catch (e) { console.log("Reintentando conexión..."); }
+        }
+
+        function renderizar() {
+            const cont = document.getElementById('contenedor-pedidos');
+            cont.innerHTML = "";
+            pedidosActivos.forEach(p => {
+                const idCorto = p.id.toString().slice(-3);
+                const card = document.createElement('div');
+                card.className = 'pedido-card';
+                card.innerHTML = `
+                    <div class="id-badge">${idCorto}</div>
+                    <span class="linea-txt">${p.linea}</span>
+                    <span class="producto-txt">${p.producto}</span>
+                    <div style="font-size:0.9em; color:#2ecc71; font-weight:bold;">${p.estado}</div>
+                `;
+                cont.appendChild(card);
+            });
+        }
+
+        recognition.onend = () => { if(sistemaActivo) recognition.start(); };
+    </script>
+</body>
+</html>
