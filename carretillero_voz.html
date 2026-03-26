@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Voz Carretilla - v10 Final</title>
+    <title>Panel Voz Carretilla - v11 Filtro Pendientes</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; margin: 0; display: flex; flex-direction: column; height: 100vh; }
         .header { padding: 15px; background: #1e1e1e; border-bottom: 2px solid #2ecc71; display: flex; justify-content: space-around; align-items: center; }
@@ -40,7 +40,7 @@
 
     <script>
         // --- CONFIGURACIÓN ---
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzuTfaz-RPol3mW3NBq7VdP5-oo_VCwfvhHjVvHudhXTHY9C_Dh-1OCACS-OPoi-UlZKA/exec"; // REEMPLAZAR CON TU URL /exec
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzuTfaz-RPol3mW3NBq7VdP5-oo_VCwfvhHjVvHudhXTHY9C_Dh-1OCACS-OPoi-UlZKA/exec"; 
 
         let pedidosActivos = [];
         let sistemaActivo = false;
@@ -53,46 +53,46 @@
 
         // --- PROCESAMIENTO DE TEXTO ---
         function prepararProductoParaVoz(texto) {
-            // Reemplaza guiones por pausas (comas) para que lea bloques enteros
             return texto.toString().replace(/-/g, ', '); 
         }
 
         function prepararIDParaVoz(id) {
-            // Deletrea números con puntos para máxima claridad
             return id.toString().split('').join('. ');
         }
 
         // --- MOTOR DE VOZ (COLA DE ESPERA) ---
         function decir(texto, callback) {
-            // Si no hay callback, cancelamos lo anterior para dar prioridad a la orden actual
             if (synth.speaking && !callback) synth.cancel();
 
             const ut = new SpeechSynthesisUtterance(texto);
             ut.lang = 'es-ES';
-            ut.rate = 0.70; // Velocidad lenta y robótica
+            ut.rate = 0.70; 
             ut.pitch = 1.0;  
 
             if (callback) {
-                ut.onend = callback; // Ejecuta la siguiente función al terminar de hablar
+                ut.onend = callback; 
             }
 
             synth.speak(ut);
         }
 
-        // --- DICTADO SECUENCIAL ---
+        // --- DICTADO SECUENCIAL (FILTRADO) ---
         function dictarListaCompleta() {
-            if (pedidosActivos.length === 0) {
-                decir("No hay pedidos pendientes.");
+            // Filtramos para obtener solo los que están Pendientes o Urgentes
+            const pedidosParaDictar = pedidosActivos.filter(p => p.estado === "Pendiente" || p.estado === "Urgente");
+
+            if (pedidosParaDictar.length === 0) {
+                decir("No hay pedidos pendientes para aceptar.");
                 return;
             }
             
             synth.cancel();
-            decir("Lista de pedidos actuales.");
+            decir("Lista de pedidos pendientes.");
 
             let i = 0;
             function siguiente() {
-                if (i < pedidosActivos.length && sistemaActivo) {
-                    const p = pedidosActivos[i];
+                if (i < pedidosParaDictar.length && sistemaActivo) {
+                    const p = pedidosParaDictar[i];
                     const idCorto = p.id.toString().slice(-3);
                     const idParaVoz = prepararIDParaVoz(idCorto);
                     const productoParaVoz = prepararProductoParaVoz(p.producto);
@@ -122,7 +122,7 @@
                 document.getElementById('status-bar').innerText = "🎤 ESCUCHANDO COMANDOS...";
                 
                 decir(`Hola ${nombre}. Que tengas una buena jornada de trabajo.`, () => {
-                    buscarPedidos(true); // Empieza a buscar y dicta la primera lista tras el saludo
+                    buscarPedidos(true); 
                 });
 
                 setInterval(buscarPedidos, 10000); 
@@ -176,10 +176,12 @@
                 const response = await fetch(WEB_APP_URL, { method: "POST", body: JSON.stringify({ action: "obtener" }) });
                 const nuevosPedidos = await response.json();
                 
-                // Aviso de pedido nuevo individual si no se está dictando la lista
                 if (nuevosPedidos.length > pedidosActivos.length && !debeDictar && !synth.speaking) {
                     const n = nuevosPedidos[nuevosPedidos.length - 1];
-                    decir(`Atención. Nuevo pedido: ${prepararProductoParaVoz(n.producto)}. Identificador: ${prepararIDParaVoz(n.id.toString().slice(-3))}`);
+                    // Asegurarnos de que el aviso de nuevo pedido sea de uno pendiente/urgente
+                    if (n.estado === "Pendiente" || n.estado === "Urgente") {
+                        decir(`Atención. Nuevo pedido: ${prepararProductoParaVoz(n.producto)}. Identificador: ${prepararIDParaVoz(n.id.toString().slice(-3))}`);
+                    }
                 }
 
                 pedidosActivos = nuevosPedidos;
